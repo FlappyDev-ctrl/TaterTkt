@@ -1,6 +1,11 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
+
 #include <base/math.h>
+#include <base/vmath.h>
+
+#include <algorithm> // std::clamp, std::max
+// #include <cmath> // (décommenter si besoin de std::sin/std::cos sur certaines toolchains)
 
 #include <engine/client.h>
 #include <engine/shared/config.h>
@@ -10,11 +15,27 @@
 #include <game/client/components/menus.h>
 #include <game/client/components/scoreboard.h>
 #include <game/client/gameclient.h>
-#include <game/collision.h>
-
-#include <base/vmath.h>
 
 #include "controls.h"
+#include <game/collision.h>
+#include <game/mapitems.h>
+
+// --- Compat flags ---
+// Si COLFLAG_DEATH n'existe pas dans ta branche, on le définit.
+// (Certaines branches l'appellent COLFLAG_DAMAGE ; on mappe dans ce cas.)
+#ifndef COLFLAG_DEATH
+#ifdef COLFLAG_DAMAGE
+#define COLFLAG_DEATH COLFLAG_DAMAGE
+#else
+#define COLFLAG_DEATH 2 // valeur historique (SOLID=1, DEATH=2, NOHOOK=4, ...)
+#endif
+#endif
+
+// ---------- AntiFreeze static members ----------
+int64_t CControls::s_LastAvoidTime = 0;
+int64_t CControls::s_LastActiveCheckTime = 0;
+const int64_t CControls::ACTIVE_COOLDOWN = time_freq() / 10;
+// ---------------------------------------------
 
 CControls::CControls()
 {
@@ -38,7 +59,7 @@ void CControls::OnReset()
 void CControls::ResetInput(int Dummy)
 {
 	m_aLastData[Dummy].m_Direction = 0;
-	// simulate releasing the fire button
+	// simuler le relâchement du tir
 	if((m_aLastData[Dummy].m_Fire & 1) != 0)
 		m_aLastData[Dummy].m_Fire++;
 	m_aLastData[Dummy].m_Fire &= INPUT_STATE_MASK;
@@ -173,7 +194,8 @@ void CControls::OnMessage(int Msg, void *pRawMsg)
 		CNetMsg_Sv_WeaponPickup *pMsg = (CNetMsg_Sv_WeaponPickup *)pRawMsg;
 		if(g_Config.m_ClAutoswitchWeapons)
 			m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = pMsg->m_Weapon + 1;
-		// We don't really know ammo count, until we'll switch to that weapon, but any non-zero count will suffice here
+		// On ne connaît le nombre de munitions qu'au switch de l'arme (géré serveur),
+		// mais toute valeur non nulle nous va ici pour l'auto-switch.
 		m_aAmmoCount[maximum(0, pMsg->m_Weapon % NUM_WEAPONS)] = 10;
 	}
 }
@@ -206,7 +228,7 @@ int CControls::SnapInput(int *pData)
 
 	m_aLastData[g_Config.m_ClDummy].m_PlayerFlags = m_aInputData[g_Config.m_ClDummy].m_PlayerFlags;
 
-	// we freeze the input if chat or menu is activated
+	// fige l'input si chat/menu actif
 	if(!(m_aInputData[g_Config.m_ClDummy].m_PlayerFlags & PLAYERFLAG_PLAYING))
 	{
 		if(!GameClient()->m_GameInfo.m_BugDDRaceInput)
@@ -214,13 +236,12 @@ int CControls::SnapInput(int *pData)
 
 		mem_copy(pData, &m_aInputData[g_Config.m_ClDummy], sizeof(m_aInputData[0]));
 
-		// set the target anyway though so that we can keep seeing our surroundings,
-		// even if chat or menu are activated
+		// garder la target quand même pour voir les alentours
 		vec2 Pos = GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy];
 		if(g_Config.m_TcScaleMouseDistance && !GameClient()->m_Snap.m_SpecInfo.m_Active)
 		{
 			const int MaxDistance = g_Config.m_ClDyncam ? g_Config.m_ClDyncamMaxDistance : g_Config.m_ClMouseMaxDistance;
-			if(MaxDistance > 5 && MaxDistance < 1000) // Don't scale if angle bind or reduces precision
+			if(MaxDistance > 5 && MaxDistance < 1000) // pas d’échelle si angle bind, etc.
 				Pos *= 1000.0f / (float)MaxDistance;
 		}
 		m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)Pos.x;
@@ -229,7 +250,7 @@ int CControls::SnapInput(int *pData)
 		if(!m_aInputData[g_Config.m_ClDummy].m_TargetX && !m_aInputData[g_Config.m_ClDummy].m_TargetY)
 			m_aInputData[g_Config.m_ClDummy].m_TargetX = 1;
 
-		// send once a second just to be sure
+		// ping régulier
 		Send = Send || time_get() > m_LastSendTime + time_freq();
 	}
 	else
@@ -246,7 +267,7 @@ int CControls::SnapInput(int *pData)
 		if(g_Config.m_TcScaleMouseDistance && !GameClient()->m_Snap.m_SpecInfo.m_Active)
 		{
 			const int MaxDistance = g_Config.m_ClDyncam ? g_Config.m_ClDyncamMaxDistance : g_Config.m_ClMouseMaxDistance;
-			if(MaxDistance > 5 && MaxDistance < 1000) // Don't scale if angle bind or reduces precision
+			if(MaxDistance > 5 && MaxDistance < 1000)
 				Pos *= 1000.0f / (float)MaxDistance;
 		}
 		m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)Pos.x;
@@ -255,7 +276,7 @@ int CControls::SnapInput(int *pData)
 		if(!m_aInputData[g_Config.m_ClDummy].m_TargetX && !m_aInputData[g_Config.m_ClDummy].m_TargetY)
 			m_aInputData[g_Config.m_ClDummy].m_TargetX = 1;
 
-		// set direction
+		// direction
 		m_aInputData[g_Config.m_ClDummy].m_Direction = 0;
 		if(m_aInputDirectionLeft[g_Config.m_ClDummy] && !m_aInputDirectionRight[g_Config.m_ClDummy])
 			m_aInputData[g_Config.m_ClDummy].m_Direction = -1;
@@ -296,8 +317,8 @@ int CControls::SnapInput(int *pData)
 			pDummyInput->m_Hook = g_Config.m_ClDummyHook;
 		}
 
-		// stress testing
 #ifdef CONF_DEBUG
+		// stress testing
 		if(g_Config.m_DbgStress)
 		{
 			float t = Client()->LocalTime();
@@ -308,11 +329,14 @@ int CControls::SnapInput(int *pData)
 			m_aInputData[g_Config.m_ClDummy].m_Fire = ((int)(t * 10));
 			m_aInputData[g_Config.m_ClDummy].m_Hook = ((int)(t * 2)) & 1;
 			m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = ((int)t) % NUM_WEAPONS;
-			m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)(std::sin(t * 3) * 100.0f);
-			m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)(std::cos(t * 3) * 100.0f);
+			// Décommente si <cmath> est inclus et nécessaire :
+			// m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)(std::sin(t * 3) * 100.0f);
+			// m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)(std::cos(t * 3) * 100.0f);
+			m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)(100.0f);
+			m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)(0.0f);
 		}
 #endif
-		// check if we need to send input
+		// conditions d'envoi
 		Send = Send || m_aInputData[g_Config.m_ClDummy].m_Direction != m_aLastData[g_Config.m_ClDummy].m_Direction;
 		Send = Send || m_aInputData[g_Config.m_ClDummy].m_Jump != m_aLastData[g_Config.m_ClDummy].m_Jump;
 		Send = Send || m_aInputData[g_Config.m_ClDummy].m_Fire != m_aLastData[g_Config.m_ClDummy].m_Fire;
@@ -320,11 +344,11 @@ int CControls::SnapInput(int *pData)
 		Send = Send || m_aInputData[g_Config.m_ClDummy].m_WantedWeapon != m_aLastData[g_Config.m_ClDummy].m_WantedWeapon;
 		Send = Send || m_aInputData[g_Config.m_ClDummy].m_NextWeapon != m_aLastData[g_Config.m_ClDummy].m_NextWeapon;
 		Send = Send || m_aInputData[g_Config.m_ClDummy].m_PrevWeapon != m_aLastData[g_Config.m_ClDummy].m_PrevWeapon;
-		Send = Send || time_get() > m_LastSendTime + time_freq() / 25; // send at least 25 Hz
+		Send = Send || time_get() > m_LastSendTime + time_freq() / 25; // au moins 25 Hz
 		Send = Send || (GameClient()->m_Snap.m_pLocalCharacter && GameClient()->m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_NINJA && (m_aInputData[g_Config.m_ClDummy].m_Direction || m_aInputData[g_Config.m_ClDummy].m_Jump || m_aInputData[g_Config.m_ClDummy].m_Hook));
 	}
 
-	// copy and return size
+	// copy & return
 	m_aLastData[g_Config.m_ClDummy] = m_aInputData[g_Config.m_ClDummy];
 
 	if(!Send)
@@ -340,11 +364,14 @@ void CControls::OnRender()
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
 
+	// Anti-freeze per-tick logic
+	AvoidFreeze();
+	HookAssist();
+
 	if(g_Config.m_ClAutoswitchWeaponsOutOfAmmo && !GameClient()->m_GameInfo.m_UnlimitedAmmo && GameClient()->m_Snap.m_pLocalCharacter)
 	{
-		// Keep track of ammo count, we know weapon ammo only when we switch to that weapon, this is tracked on server and protocol does not track that
+		// suivi des munitions (on ne connaît les munitions qu'au switch, géré côté serveur)
 		m_aAmmoCount[maximum(0, GameClient()->m_Snap.m_pLocalCharacter->m_Weapon % NUM_WEAPONS)] = GameClient()->m_Snap.m_pLocalCharacter->m_AmmoCount;
-		// Autoswitch weapon if we're out of ammo
 		if(m_aInputData[g_Config.m_ClDummy].m_Fire % 2 != 0 &&
 			GameClient()->m_Snap.m_pLocalCharacter->m_AmmoCount == 0 &&
 			GameClient()->m_Snap.m_pLocalCharacter->m_Weapon != WEAPON_HAMMER &&
@@ -366,7 +393,7 @@ void CControls::OnRender()
 	// update target pos
 	if(GameClient()->m_Snap.m_pGameInfoObj && !GameClient()->m_Snap.m_SpecInfo.m_Active)
 	{
-		// make sure to compensate for smooth dyncam to ensure the cursor stays still in world space if zoomed
+		// compenser le dyncam (zoom) pour un curseur stable en world space
 		vec2 DyncamOffsetDelta = GameClient()->m_Camera.m_DyncamTargetCameraOffset - GameClient()->m_Camera.m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy];
 		float Zoom = GameClient()->m_Camera.m_Zoom;
 		m_aTargetPos[g_Config.m_ClDummy] = GameClient()->m_LocalCharacterPos + m_aMousePos[g_Config.m_ClDummy] - DyncamOffsetDelta + DyncamOffsetDelta / Zoom;
@@ -511,4 +538,112 @@ bool CControls::CheckNewInput()
 	m_FastInput = TestInput;
 
 	return NewInput;
+}
+
+// ===== AntiFreeze & HookAssist =====
+void CControls::AvoidFreeze()
+{
+	if(!g_Config.m_DrBrc)
+		return;
+
+	const int64_t Now = time_get();
+	if(!IsAvoidCooldownElapsed(Now))
+		return;
+
+	const int Local = g_Config.m_ClDummy;
+	if(!IsPlayerActive(Local))
+		return;
+
+	if(PredictFreeze(m_aInputData[Local], g_Config.m_DrBba) && TryAvoidFreeze(Local))
+	{
+		UpdateAvoidCooldown(Now);
+		dbg_msg("avoidfreeze", "Avoided freeze: changed direction");
+	}
+}
+
+void CControls::HookAssist()
+{
+	if(!g_Config.m_DrBlc || !g_Config.m_DrBrc)
+		return;
+
+	const int Local = g_Config.m_ClDummy;
+	if(PredictFreeze(m_aInputData[Local], g_Config.m_DrBbc))
+	{
+		m_aInputData[Local].m_Hook = 0;
+		dbg_msg("hookassist", "Hook disabled (danger)");
+	}
+}
+
+bool CControls::IsPlayerInDanger(int LocalPlayerId)
+{
+	return PredictFreeze(m_aInputData[LocalPlayerId], 1);
+}
+
+bool CControls::GetFreeze(vec2 Pos, int FreezeTime)
+{
+	if(FreezeTime > 0)
+		return true;
+
+	// flags de collision aux coordonnées monde
+	const int Flags = Collision()->GetCollisionAt((int)Pos.x, (int)Pos.y);
+	if(Flags & COLFLAG_DEATH) // IMPORTANT : ne pas écrire CCollision::COLFLAG_DEATH
+		return true;
+
+	const int MapIndex = Collision()->GetMapIndex(Pos);
+	return Collision()->IsTeleport(MapIndex) || Collision()->IsCheckTeleport(MapIndex);
+}
+
+bool CControls::IsAvoidCooldownElapsed(int64_t CurrentTime)
+{
+	const int64_t MinDelay = time_freq() * 500 / 1000;
+	const int64_t ConfigDelay = (int64_t)g_Config.m_DrMac * time_freq() / 1000;
+	return (CurrentTime - s_LastAvoidTime) >= std::max(MinDelay, ConfigDelay);
+}
+
+void CControls::UpdateAvoidCooldown(int64_t CurrentTime)
+{
+	s_LastAvoidTime = CurrentTime;
+}
+
+bool CControls::PredictFreeze(const CNetObj_PlayerInput & /*Input*/, int /*Ticks*/)
+{
+	if(!GameClient()->m_Snap.m_pLocalCharacter)
+		return false;
+
+	// check simple autour de la position actuelle
+	return GetFreeze(GameClient()->m_LocalCharacterPos, 0);
+}
+
+bool CControls::TryAvoidFreeze(int LocalPlayerId)
+{
+	const int Directions[] = {0, -1, 1};
+	const CNetObj_PlayerInput Base = m_aInputData[LocalPlayerId];
+
+	for(int i = 0; i < 3; i++)
+	{
+		int Dir = Directions[i];
+		if(Dir == Base.m_Direction)
+			continue;
+
+		CNetObj_PlayerInput Test = Base;
+		Test.m_Direction = Dir;
+
+		if(!PredictFreeze(Test, g_Config.m_DrBba))
+		{
+			m_aInputData[LocalPlayerId].m_Direction = Dir;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool CControls::IsPlayerActive(int LocalPlayerId)
+{
+	const int64_t Now = time_get();
+	if(Now - s_LastActiveCheckTime < ACTIVE_COOLDOWN)
+		return false;
+
+	s_LastActiveCheckTime = Now;
+	const CNetObj_PlayerInput &In = m_aInputData[LocalPlayerId];
+	return (In.m_Direction != 0 || In.m_Jump != 0 || In.m_Hook != 0);
 }

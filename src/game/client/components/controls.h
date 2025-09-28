@@ -14,9 +14,11 @@
 class CControls : public CComponent
 {
 public:
+	// Distances de souris (utiles pour l'aim-assist, etc.)
 	float GetMinMouseDistance() const;
 	float GetMaxMouseDistance() const;
 
+	// Données publiques (héritées du client)
 	vec2 m_aMousePos[NUM_DUMMIES];
 	vec2 m_aMousePosOnAction[NUM_DUMMIES];
 	vec2 m_aTargetPos[NUM_DUMMIES];
@@ -35,6 +37,7 @@ public:
 	CControls();
 	int Sizeof() const override { return sizeof(*this); }
 
+	// Hooks de composant
 	void OnReset() override;
 	void OnRender() override;
 	void OnMessage(int MsgType, void *pRawMsg) override;
@@ -42,15 +45,36 @@ public:
 	void OnConsoleInit() override;
 	virtual void OnPlayerDeath();
 
+	// Snap & input
 	int SnapInput(int *pData);
 	void ClampMousePos();
 	void ResetInput(int Dummy);
 	bool CheckNewInput();
 
+	// === API ajoutée (features AvoidFreeze / HookAssist) ===
+	void AvoidFreeze();
+	void HookAssist();
+
 private:
+	// Console helpers
 	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUserData);
+
+	// === États statiques (cooldowns) ===
+	static int64_t s_LastAvoidTime;
+	static int64_t s_LastActiveCheckTime;
+	static const int64_t ACTIVE_COOLDOWN;
+
+	// === Helpers internes ===
+	bool IsPlayerInDanger(int LocalPlayerId);
+	bool GetFreeze(vec2 Pos, int FreezeTime);
+	bool IsAvoidCooldownElapsed(int64_t CurrentTime);
+	void UpdateAvoidCooldown(int64_t CurrentTime);
+	bool PredictFreeze(const CNetObj_PlayerInput &Input, int Ticks);
+	bool TryAvoidFreeze(int LocalPlayerId);
+	bool IsPlayerActive(int LocalPlayerId);
 };
-#endif
+
+#endif // GAME_CLIENT_COMPONENTS_CONTROLS_H

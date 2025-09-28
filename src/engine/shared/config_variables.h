@@ -773,3 +773,9 @@ MACRO_CONFIG_INT(GfxRenderThreadCount, gfx_render_thread_count, 3, 0, 0, CFGFLAG
 MACRO_CONFIG_INT(GfxDriverIsBlocked, gfx_driver_is_blocked, 0, 0, 1, CFGFLAG_SAVE | CFGFLAG_CLIENT, "If 1, the current driver is in a blocked error state.")
 
 MACRO_CONFIG_INT(ClVideoRecorderFPS, cl_video_recorder_fps, 60, 1, 1000, CFGFLAG_SAVE | CFGFLAG_CLIENT, "At which FPS the videorecorder should record demos.")
+
+MACRO_CONFIG_INT(DrBrc, dr_brc, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Enable AvoidFreeze")
+MACRO_CONFIG_INT(DrBlc, dr_blc, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Enable HookAssist")
+MACRO_CONFIG_INT(DrBba, dr_bba, 2, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AvoidFreeze prediction ticks")
+MACRO_CONFIG_INT(DrBbc, dr_bbc, 2, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "HookAssist prediction ticks")
+MACRO_CONFIG_INT(DrMac, dr_mac, 500, 0, 10000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Avoid cooldown (ms)")
