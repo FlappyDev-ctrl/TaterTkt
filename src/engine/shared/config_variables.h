@@ -778,4 +778,7 @@ MACRO_CONFIG_INT(DrBrc, dr_brc, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Enable 
 MACRO_CONFIG_INT(DrBlc, dr_blc, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Enable HookAssist")
 MACRO_CONFIG_INT(DrBba, dr_bba, 2, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AvoidFreeze prediction ticks")
 MACRO_CONFIG_INT(DrBbc, dr_bbc, 2, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "HookAssist prediction ticks")
+MACRO_CONFIG_INT(DrBfd, dr_bfd, 96, 0, 512, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AvoidFreeze detection radius (units)")
+MACRO_CONFIG_INT(DrBfs, dr_bfs, 6, 0, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AvoidFreeze push duration (ticks)")
+MACRO_CONFIG_INT(DrBhb, dr_bhb, 4, 0, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "HookAssist rehook delay (ticks)")
 MACRO_CONFIG_INT(DrMac, dr_mac, 500, 0, 10000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Avoid cooldown (ms)")

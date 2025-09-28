@@ -18,7 +18,7 @@ public:
 	float GetMinMouseDistance() const;
 	float GetMaxMouseDistance() const;
 
-	// Données publiques (héritées du client)
+	// DonnÃ©es publiques (hÃ©ritÃ©es du client)
 	vec2 m_aMousePos[NUM_DUMMIES];
 	vec2 m_aMousePosOnAction[NUM_DUMMIES];
 	vec2 m_aTargetPos[NUM_DUMMIES];
@@ -51,7 +51,15 @@ public:
 	void ResetInput(int Dummy);
 	bool CheckNewInput();
 
-	// === API ajoutée (features AvoidFreeze / HookAssist) ===
+	static void ConKeyHookInputState(IConsole::IResult *pResult, void *pUserData);
+	bool PredictFreeze(const CNetObj_PlayerInput &Input, int Ticks, vec2 *pDangerDir = nullptr, float *pDangerDistance = nullptr);
+
+	int m_aAvoidPushTicks[NUM_DUMMIES];
+	vec2 m_aAvoidPushDir[NUM_DUMMIES];
+	int m_aHookAssistCooldown[NUM_DUMMIES];
+	bool m_aHookAssistNeedRehook[NUM_DUMMIES];
+	bool m_aHookAssistAutoOverride[NUM_DUMMIES];
+	int m_aHookAssistIntendedHook[NUM_DUMMIES];
 	void AvoidFreeze();
 	void HookAssist();
 
@@ -62,7 +70,7 @@ private:
 	static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUserData);
 
-	// === États statiques (cooldowns) ===
+	// === Ã‰tats statiques (cooldowns) ===
 	static int64_t s_LastAvoidTime;
 	static int64_t s_LastActiveCheckTime;
 	static const int64_t ACTIVE_COOLDOWN;
