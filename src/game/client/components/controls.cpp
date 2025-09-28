@@ -3,6 +3,7 @@
 
 #include <base/math.h>
 #include <base/vmath.h>
+#include <base/system.h>
 
 #include <algorithm> // std::clamp, std::max
 // #include <cmath> // (décommenter si besoin de std::sin/std::cos sur certaines toolchains)

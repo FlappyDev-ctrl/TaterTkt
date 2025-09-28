@@ -4,6 +4,7 @@
 #define GAME_CLIENT_COMPONENTS_CONTROLS_H
 
 #include <base/vmath.h>
+#include <cstdint>
 
 #include <engine/client.h>
 #include <engine/console.h>
@@ -18,7 +19,7 @@ public:
 	float GetMinMouseDistance() const;
 	float GetMaxMouseDistance() const;
 
-	// Données publiques (héritées du client)
+	// DonnÃ©es publiques (hÃ©ritÃ©es du client)
 	vec2 m_aMousePos[NUM_DUMMIES];
 	vec2 m_aMousePosOnAction[NUM_DUMMIES];
 	vec2 m_aTargetPos[NUM_DUMMIES];
@@ -51,7 +52,7 @@ public:
 	void ResetInput(int Dummy);
 	bool CheckNewInput();
 
-	// === API ajoutée (features AvoidFreeze / HookAssist) ===
+	// === API ajoutÃ©e (features AvoidFreeze / HookAssist) ===
 	void AvoidFreeze();
 	void HookAssist();
 
@@ -62,7 +63,7 @@ private:
 	static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUserData);
 
-	// === États statiques (cooldowns) ===
+	// === Ã‰tats statiques (cooldowns) ===
 	static int64_t s_LastAvoidTime;
 	static int64_t s_LastActiveCheckTime;
 	static const int64_t ACTIVE_COOLDOWN;
