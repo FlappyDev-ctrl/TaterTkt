@@ -78,61 +78,83 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 	CUIRect Label, Button, Left, Right, Game, ClientSettings;
 	MainView.HSplitTop(150.0f, &Game, &ClientSettings);
 
-	// game
-	{
-		// headline
-		Game.HSplitTop(30.0f, &Label, &Game);
-		Ui()->DoLabel(&Label, Localize("Game"), 20.0f, TEXTALIGN_ML);
-		Game.HSplitTop(5.0f, nullptr, &Game);
-		Game.VSplitMid(&Left, nullptr, 20.0f);
+        // game
+        {
+                // headline
+                Game.HSplitTop(30.0f, &Label, &Game);
+                Ui()->DoLabel(&Label, Localize("Game"), 20.0f, TEXTALIGN_ML);
+                Game.HSplitTop(5.0f, nullptr, &Game);
+                Game.VSplitMid(&Left, &Right, 20.0f);
 
-		// dynamic camera
-		Left.HSplitTop(20.0f, &Button, &Left);
-		const bool IsDyncam = g_Config.m_ClDyncam || g_Config.m_ClMouseFollowfactor > 0;
-		if(DoButton_CheckBox(&g_Config.m_ClDyncam, Localize("Dynamic Camera"), IsDyncam, &Button))
-		{
-			if(IsDyncam)
-			{
-				g_Config.m_ClDyncam = 0;
-				g_Config.m_ClMouseFollowfactor = 0;
-			}
-			else
-			{
-				g_Config.m_ClDyncam = 1;
-			}
-		}
+                // dynamic camera
+                Left.HSplitTop(20.0f, &Button, &Left);
+                const bool IsDyncam = g_Config.m_ClDyncam || g_Config.m_ClMouseFollowfactor > 0;
+                if(DoButton_CheckBox(&g_Config.m_ClDyncam, Localize("Dynamic Camera"), IsDyncam, &Button))
+                {
+                        if(IsDyncam)
+                        {
+                                g_Config.m_ClDyncam = 0;
+                                g_Config.m_ClMouseFollowfactor = 0;
+                        }
+                        else
+                        {
+                                g_Config.m_ClDyncam = 1;
+                        }
+                }
 
-		// smooth dynamic camera
-		Left.HSplitTop(5.0f, nullptr, &Left);
-		Left.HSplitTop(20.0f, &Button, &Left);
-		if(g_Config.m_ClDyncam)
-		{
-			if(DoButton_CheckBox(&g_Config.m_ClDyncamSmoothness, Localize("Smooth Dynamic Camera"), g_Config.m_ClDyncamSmoothness, &Button))
-			{
-				if(g_Config.m_ClDyncamSmoothness)
-				{
-					g_Config.m_ClDyncamSmoothness = 0;
-				}
-				else
-				{
-					g_Config.m_ClDyncamSmoothness = 50;
-					g_Config.m_ClDyncamStabilizing = 50;
-				}
-			}
-		}
+                // smooth dynamic camera
+                Left.HSplitTop(5.0f, nullptr, &Left);
+                Left.HSplitTop(20.0f, &Button, &Left);
+                if(g_Config.m_ClDyncam)
+                {
+                        if(DoButton_CheckBox(&g_Config.m_ClDyncamSmoothness, Localize("Smooth Dynamic Camera"), g_Config.m_ClDyncamSmoothness, &Button))
+                        {
+                                if(g_Config.m_ClDyncamSmoothness)
+                                {
+                                        g_Config.m_ClDyncamSmoothness = 0;
+                                }
+                                else
+                                {
+                                        g_Config.m_ClDyncamSmoothness = 50;
+                                        g_Config.m_ClDyncamStabilizing = 50;
+                                }
+                        }
+                }
 
-		// weapon pickup
-		Left.HSplitTop(5.0f, nullptr, &Left);
-		Left.HSplitTop(20.0f, &Button, &Left);
-		if(DoButton_CheckBox(&g_Config.m_ClAutoswitchWeapons, Localize("Switch weapon on pickup"), g_Config.m_ClAutoswitchWeapons, &Button))
-			g_Config.m_ClAutoswitchWeapons ^= 1;
+                // weapon pickup
+                Left.HSplitTop(5.0f, nullptr, &Left);
+                Left.HSplitTop(20.0f, &Button, &Left);
+                if(DoButton_CheckBox(&g_Config.m_ClAutoswitchWeapons, Localize("Switch weapon on pickup"), g_Config.m_ClAutoswitchWeapons, &Button))
+                        g_Config.m_ClAutoswitchWeapons ^= 1;
 
-		// weapon out of ammo autoswitch
-		Left.HSplitTop(5.0f, nullptr, &Left);
-		Left.HSplitTop(20.0f, &Button, &Left);
-		if(DoButton_CheckBox(&g_Config.m_ClAutoswitchWeaponsOutOfAmmo, Localize("Switch weapon when out of ammo"), g_Config.m_ClAutoswitchWeaponsOutOfAmmo, &Button))
-			g_Config.m_ClAutoswitchWeaponsOutOfAmmo ^= 1;
-	}
+                // weapon out of ammo autoswitch
+                Left.HSplitTop(5.0f, nullptr, &Left);
+                Left.HSplitTop(20.0f, &Button, &Left);
+                if(DoButton_CheckBox(&g_Config.m_ClAutoswitchWeaponsOutOfAmmo, Localize("Switch weapon when out of ammo"), g_Config.m_ClAutoswitchWeaponsOutOfAmmo, &Button))
+                        g_Config.m_ClAutoswitchWeaponsOutOfAmmo ^= 1;
+
+                // helpers
+                Right.HSplitTop(20.0f, &Label, &Right);
+                Ui()->DoLabel(&Label, Localize("Helpers"), 16.0f, TEXTALIGN_ML);
+                Right.HSplitTop(5.0f, nullptr, &Right);
+
+                Right.HSplitTop(20.0f, &Button, &Right);
+                if(DoButton_CheckBox(&g_Config.m_DrBrc, Localize("AvoidFreeze"), g_Config.m_DrBrc, &Button))
+                        g_Config.m_DrBrc ^= 1;
+
+                Right.HSplitTop(5.0f, nullptr, &Right);
+                Right.HSplitTop(20.0f, &Button, &Right);
+                Ui()->DoScrollbarOption(&g_Config.m_DrBba, &g_Config.m_DrBba, &Button, Localize("AvoidFreeze prediction ticks"), 0, 20);
+
+                Right.HSplitTop(10.0f, nullptr, &Right);
+                Right.HSplitTop(20.0f, &Button, &Right);
+                if(DoButton_CheckBox(&g_Config.m_DrBlc, Localize("HookAssist"), g_Config.m_DrBlc, &Button))
+                        g_Config.m_DrBlc ^= 1;
+
+                Right.HSplitTop(5.0f, nullptr, &Right);
+                Right.HSplitTop(20.0f, &Button, &Right);
+                Ui()->DoScrollbarOption(&g_Config.m_DrBbc, &g_Config.m_DrBbc, &Button, Localize("HookAssist prediction ticks"), 0, 20);
+        }
 
 	// client
 	{
