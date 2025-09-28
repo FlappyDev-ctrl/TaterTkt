@@ -5,6 +5,7 @@
 #include <base/vmath.h>
 
 #include <algorithm> // std::clamp, std::max
+#include <limits> // std::numeric_limits
 // #include <cmath> // (décommenter si besoin de std::sin/std::cos sur certaines toolchains)
 
 #include <engine/client.h>
@@ -43,6 +44,12 @@ CControls::CControls()
 	mem_zero(m_aMousePos, sizeof(m_aMousePos));
 	mem_zero(m_aMousePosOnAction, sizeof(m_aMousePosOnAction));
 	mem_zero(m_aTargetPos, sizeof(m_aTargetPos));
+	mem_zero(m_aAvoidPushTicks, sizeof(m_aAvoidPushTicks));
+	mem_zero(m_aAvoidPushDir, sizeof(m_aAvoidPushDir));
+	mem_zero(m_aHookAssistCooldown, sizeof(m_aHookAssistCooldown));
+	mem_zero(m_aHookAssistNeedRehook, sizeof(m_aHookAssistNeedRehook));
+	mem_zero(m_aHookAssistAutoOverride, sizeof(m_aHookAssistAutoOverride));
+	mem_zero(m_aHookAssistIntendedHook, sizeof(m_aHookAssistIntendedHook));
 }
 
 void CControls::OnReset()
@@ -68,6 +75,12 @@ void CControls::ResetInput(int Dummy)
 
 	m_aInputDirectionLeft[Dummy] = 0;
 	m_aInputDirectionRight[Dummy] = 0;
+	m_aAvoidPushTicks[Dummy] = 0;
+	m_aAvoidPushDir[Dummy] = vec2(0.0f, 0.0f);
+	m_aHookAssistCooldown[Dummy] = 0;
+	m_aHookAssistNeedRehook[Dummy] = false;
+	m_aHookAssistAutoOverride[Dummy] = false;
+	m_aHookAssistIntendedHook[Dummy] = 0;
 }
 
 void CControls::OnPlayerDeath()
@@ -127,6 +140,26 @@ void CControls::ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUse
 	ConKeyInputCounter(pResult, pSet);
 	pSet->m_pControls->m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = 0;
 }
+void CControls::ConKeyHookInputState(IConsole::IResult *pResult, void *pUserData)
+{
+	ConKeyInputState(pResult, pUserData);
+
+	CInputState *pState = (CInputState *)pUserData;
+	CControls *pControls = pState->m_pControls;
+
+	for(int Dummy = 0; Dummy < NUM_DUMMIES; ++Dummy)
+	{
+		int Value = *pState->m_apVariables[Dummy];
+		pControls->m_aHookAssistIntendedHook[Dummy] = Value;
+		if(Value == 0)
+		{
+			pControls->m_aHookAssistNeedRehook[Dummy] = false;
+			pControls->m_aHookAssistAutoOverride[Dummy] = false;
+			pControls->m_aHookAssistCooldown[Dummy] = 0;
+		}
+	}
+}
+
 
 void CControls::OnConsoleInit()
 {
@@ -145,7 +178,7 @@ void CControls::OnConsoleInit()
 	}
 	{
 		static CInputState s_State = {this, {&m_aInputData[0].m_Hook, &m_aInputData[1].m_Hook}};
-		Console()->Register("+hook", "", CFGFLAG_CLIENT, ConKeyInputState, &s_State, "Hook");
+		Console()->Register("+hook", "", CFGFLAG_CLIENT, ConKeyHookInputState, &s_State, "Hook");
 	}
 	{
 		static CInputState s_State = {this, {&m_aInputData[0].m_Fire, &m_aInputData[1].m_Fire}};
@@ -543,6 +576,20 @@ bool CControls::CheckNewInput()
 // ===== AntiFreeze & HookAssist =====
 void CControls::AvoidFreeze()
 {
+	const int Local = g_Config.m_ClDummy;
+
+	if(m_aAvoidPushTicks[Local] > 0)
+	{
+		int DesiredDir = 0;
+		if(m_aAvoidPushDir[Local].x > 0.1f)
+			DesiredDir = 1;
+		else if(m_aAvoidPushDir[Local].x < -0.1f)
+			DesiredDir = -1;
+
+		m_aInputData[Local].m_Direction = DesiredDir;
+		--m_aAvoidPushTicks[Local];
+	}
+
 	if(!g_Config.m_DrBrc)
 		return;
 
@@ -550,27 +597,85 @@ void CControls::AvoidFreeze()
 	if(!IsAvoidCooldownElapsed(Now))
 		return;
 
-	const int Local = g_Config.m_ClDummy;
 	if(!IsPlayerActive(Local))
 		return;
 
-	if(PredictFreeze(m_aInputData[Local], g_Config.m_DrBba) && TryAvoidFreeze(Local))
+	vec2 DangerDir(0.0f, 0.0f);
+	float DangerDist = std::numeric_limits<float>::max();
+	if(PredictFreeze(m_aInputData[Local], g_Config.m_DrBba, &DangerDir, &DangerDist))
 	{
-		UpdateAvoidCooldown(Now);
-		dbg_msg("avoidfreeze", "Avoided freeze: changed direction");
+		bool Applied = false;
+		if(absolute(DangerDir.x) > 0.1f)
+		{
+			m_aInputData[Local].m_Direction = DangerDir.x > 0.0f ? 1 : -1;
+			Applied = true;
+		}
+
+		if(!Applied)
+			Applied = TryAvoidFreeze(Local);
+
+		if(Applied)
+		{
+			m_aAvoidPushDir[Local] = DangerDir;
+			m_aAvoidPushTicks[Local] = maximum(m_aAvoidPushTicks[Local], maximum(0, g_Config.m_DrBfs));
+			UpdateAvoidCooldown(Now);
+			dbg_msg("avoidfreeze", "Avoided freeze: push dist=%.1f", DangerDist);
+		}
 	}
 }
 
 void CControls::HookAssist()
 {
-	if(!g_Config.m_DrBlc || !g_Config.m_DrBrc)
+	if(!g_Config.m_DrBlc)
 		return;
 
 	const int Local = g_Config.m_ClDummy;
-	if(PredictFreeze(m_aInputData[Local], g_Config.m_DrBbc))
+
+	if(m_aHookAssistCooldown[Local] > 0)
+		--m_aHookAssistCooldown[Local];
+
+	if(!m_aHookAssistIntendedHook[Local])
 	{
+		m_aHookAssistNeedRehook[Local] = false;
+		if(m_aHookAssistAutoOverride[Local])
+		{
+			m_aInputData[Local].m_Hook = 0;
+			m_aHookAssistAutoOverride[Local] = false;
+			m_aHookAssistCooldown[Local] = 0;
+		}
+	}
+
+	const bool Danger = PredictFreeze(m_aInputData[Local], g_Config.m_DrBbc);
+
+	if(Danger)
+	{
+		if(m_aHookAssistIntendedHook[Local])
+		{
+			m_aHookAssistNeedRehook[Local] = true;
+			m_aHookAssistCooldown[Local] = maximum(m_aHookAssistCooldown[Local], maximum(0, g_Config.m_DrBhb));
+			m_aHookAssistAutoOverride[Local] = true;
+		}
+
 		m_aInputData[Local].m_Hook = 0;
 		dbg_msg("hookassist", "Hook disabled (danger)");
+		return;
+	}
+
+	if(m_aHookAssistNeedRehook[Local] && m_aHookAssistIntendedHook[Local])
+	{
+		if(m_aHookAssistCooldown[Local] <= 0)
+		{
+			m_aInputData[Local].m_Hook = 1;
+			m_aHookAssistNeedRehook[Local] = false;
+			m_aHookAssistAutoOverride[Local] = false;
+			m_aHookAssistCooldown[Local] = 0;
+			dbg_msg("hookassist", "Hook restored");
+		}
+		else
+		{
+			m_aInputData[Local].m_Hook = 0;
+			m_aHookAssistAutoOverride[Local] = true;
+		}
 	}
 }
 
@@ -605,13 +710,76 @@ void CControls::UpdateAvoidCooldown(int64_t CurrentTime)
 	s_LastAvoidTime = CurrentTime;
 }
 
-bool CControls::PredictFreeze(const CNetObj_PlayerInput & /*Input*/, int /*Ticks*/)
+bool CControls::PredictFreeze(const CNetObj_PlayerInput &Input, int Ticks, vec2 *pDangerDir, float *pDangerDistance)
 {
 	if(!GameClient()->m_Snap.m_pLocalCharacter)
+	{
+		if(pDangerDir)
+			*pDangerDir = vec2(0.0f, 0.0f);
+		if(pDangerDistance)
+			*pDangerDistance = std::numeric_limits<float>::max();
 		return false;
+	}
 
-	// check simple autour de la position actuelle
-	return GetFreeze(GameClient()->m_LocalCharacterPos, 0);
+	const vec2 Pos = GameClient()->m_LocalCharacterPos;
+	const float RadiusCfg = maximum(0, g_Config.m_DrBfd);
+	const float Radius = maximum(32.0f, RadiusCfg + Ticks * 16.0f);
+	const float Step = 8.0f;
+	float ClosestDist = std::numeric_limits<float>::max();
+	vec2 ClosestDir = vec2(0.0f, 0.0f);
+	bool Danger = false;
+
+	vec2 PreferredDir = GameClient()->m_PredictedChar.m_Vel;
+	if(length(PreferredDir) < 0.001f && Input.m_Direction != 0)
+		PreferredDir = vec2((float)Input.m_Direction, 0.0f);
+	if(length(PreferredDir) > 0.0f)
+		PreferredDir = normalize(PreferredDir);
+
+	for(float x = -Radius; x <= Radius; x += Step)
+	{
+		for(float y = -Radius; y <= Radius; y += Step)
+		{
+			vec2 Offset(x, y);
+			if(length(Offset) > Radius)
+				continue;
+
+			vec2 Sample = Pos + Offset;
+			if(!GetFreeze(Sample, 0))
+				continue;
+
+			float Dist = length(Offset);
+			if(Dist < ClosestDist)
+			{
+				if(length(PreferredDir) > 0.0f && Dist > 0.0f)
+				{
+					vec2 DirToFreeze = normalize(Offset);
+					if(dot(DirToFreeze, PreferredDir) < -0.2f)
+						continue;
+				}
+
+				ClosestDist = Dist;
+				Danger = true;
+				ClosestDir = Dist > 0.0f ? -normalize(Offset) : vec2(0.0f, 0.0f);
+			}
+		}
+	}
+
+	if(Danger)
+	{
+		if(pDangerDir)
+			*pDangerDir = ClosestDir;
+		if(pDangerDistance)
+			*pDangerDistance = ClosestDist;
+	}
+	else
+	{
+		if(pDangerDir)
+			*pDangerDir = vec2(0.0f, 0.0f);
+		if(pDangerDistance)
+			*pDangerDistance = std::numeric_limits<float>::max();
+	}
+
+	return Danger;
 }
 
 bool CControls::TryAvoidFreeze(int LocalPlayerId)
